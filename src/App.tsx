@@ -7,6 +7,7 @@ import { describeMove, gameStatus, moveToUci, playOfferedMove } from './game/che
 import { selectFour, shuffle } from './game/classification';
 import {
   DEFAULT_THRESHOLDS,
+  type MoveStats,
   type MoveOption,
   type PersistedGame,
   type StoredFailure,
@@ -16,10 +17,15 @@ import {
 import './styles.css';
 
 const GAME_KEY = 'fourced-move.game.v1';
-const SETTINGS_KEY = 'fourced-move.settings.v1';
 const VISITED_KEY = 'fourced-move.visited.v1';
 const OPTION_COLORS = ['#c28b26', '#477c9e', '#a95843', '#785b96'];
 const CONFIRM_COLOR = '#2f8a5c';
+const QUALITY_COLORS: Record<MoveOption['quality'], string> = {
+  Best: '#2f8a5c',
+  Good: '#477c9e',
+  Inaccurate: '#c28b26',
+  Bad: '#a95843',
+};
 
 type Phase = 'loading' | 'ready' | 'revealed' | 'failed' | 'error' | 'finished';
 
@@ -30,18 +36,6 @@ function readGame(): PersistedGame | null {
   } catch {
     return null;
   }
-}
-
-function readSettings(): Thresholds {
-  try {
-    const value = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null') as Partial<Thresholds> | null;
-    const goodMax = Number(value?.goodMax);
-    const inaccurateMax = Number(value?.inaccurateMax);
-    if (goodMax >= 0 && inaccurateMax > goodMax) return { goodMax, inaccurateMax };
-  } catch {
-    // Fall through to defaults.
-  }
-  return DEFAULT_THRESHOLDS;
 }
 
 function isReturningVisitor(): boolean {
@@ -60,16 +54,17 @@ function restoreChess(pgn: string) {
 
 function initialSession() {
   const saved = readGame();
-  if (!saved) return { chess: new Chess(), orientation: 'w' as Color, turn: null, failure: null };
+  if (!saved) return { chess: new Chess(), orientation: 'w' as Color, turn: null, failure: null, stats: { best: 0, good: 0 } };
   try {
     return {
       chess: restoreChess(saved.pgn),
       orientation: saved.orientation === 'b' ? ('b' as Color) : ('w' as Color),
       turn: saved.turn,
       failure: saved.failure ?? null,
+      stats: saved.stats ?? { best: 0, good: 0 },
     };
   } catch {
-    return { chess: new Chess(), orientation: 'w' as Color, turn: null, failure: null };
+    return { chess: new Chess(), orientation: 'w' as Color, turn: null, failure: null, stats: { best: 0, good: 0 } };
   }
 }
 
@@ -130,13 +125,13 @@ export default function App() {
   const [turn, setTurn] = useState<StoredTurn | null>(session.turn);
   const [phase, setPhase] = useState<Phase>(session.failure ? 'failed' : 'loading');
   const [failure, setFailure] = useState<StoredFailure | null>(session.failure);
+  const [showFailureModal, setShowFailureModal] = useState(Boolean(session.failure));
+  const [moveStats, setMoveStats] = useState<MoveStats>(session.stats);
   const [showHowToPlay, setShowHowToPlay] = useState(() => !isReturningVisitor());
   const [preview, setPreview] = useState<MoveOption | null>(null);
   const [selected, setSelected] = useState<MoveOption | null>(null);
   const [pendingChoice, setPendingChoice] = useState<MoveOption | null>(null);
   const [error, setError] = useState('');
-  const [thresholds, setThresholds] = useState<Thresholds>(readSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const chess = chessRef.current;
   const fen = chess.fen();
   const terminal = gameStatus(chess);
@@ -165,13 +160,10 @@ export default function App() {
       orientation,
       turn,
       failure,
+      stats: moveStats,
     };
     localStorage.setItem(GAME_KEY, JSON.stringify(game));
-  }, [failure, orientation, revision, turn]);
-
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(thresholds));
-  }, [thresholds]);
+  }, [failure, moveStats, orientation, revision, turn]);
 
   useEffect(() => {
     if (!pendingChoice) return;
@@ -215,7 +207,7 @@ export default function App() {
       .analyze(fen, legalMoves.map(moveToUci), controller.signal)
       .then((evaluated) => {
         if (controller.signal.aborted || chessRef.current.fen() !== fen) return;
-        const options = buildOptions(legalMoves, evaluated, thresholds);
+        const options = buildOptions(legalMoves, evaluated, DEFAULT_THRESHOLDS);
         if (!options.length) throw new Error('No legal move choices were returned.');
         setTurn({ fen, options });
         setPhase('ready');
@@ -229,7 +221,7 @@ export default function App() {
     return () => controller.abort();
     // revision is the deliberate trigger after a move or reset.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revision, thresholds]);
+  }, [revision]);
 
   const playMove = (option: MoveOption) => {
     if (phase !== 'ready' || !turn) return;
@@ -244,10 +236,15 @@ export default function App() {
       setRevision((value) => value + 1);
 
       if (option.quality === 'Inaccurate' || option.quality === 'Bad') {
-        setFailure({ option, score });
+        setFailure({ option, score, options: turn.options });
+        setShowFailureModal(true);
         setPhase('failed');
         return;
       }
+
+      setMoveStats((current) => option.quality === 'Best'
+        ? { ...current, best: current.best + 1 }
+        : { ...current, good: current.good + 1 });
 
       setPhase('revealed');
       window.setTimeout(() => {
@@ -276,6 +273,8 @@ export default function App() {
     setTurn(null);
     setSelected(null);
     setFailure(null);
+    setShowFailureModal(false);
+    setMoveStats({ best: 0, good: 0 });
     setPendingChoice(null);
     setPreview(null);
     setError('');
@@ -284,13 +283,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!failure) return;
+    if (!showFailureModal) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') newGame();
+      if (event.key === 'Escape') setShowFailureModal(false);
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [failure]);
+  }, [showFailureModal]);
 
   useEffect(() => {
     if (!showHowToPlay) return;
@@ -309,6 +308,9 @@ export default function App() {
   };
 
   const previewMove = pendingChoice ?? preview ?? (phase === 'revealed' ? selected : null);
+  const reviewOptions = failure?.options?.length ? failure.options : failure ? [failure.option] : [];
+  const ratedMoveCount = moveStats.best + moveStats.good;
+  const bestMovePercentage = ratedMoveCount ? Math.round((moveStats.best / ratedMoveCount) * 100) : 0;
   const previewIndex = turn?.options.findIndex((option) => option.uci === previewMove?.uci) ?? -1;
   const previewColor = pendingChoice?.uci === previewMove?.uci
     ? CONFIRM_COLOR
@@ -341,7 +343,13 @@ export default function App() {
           endSquare: option.to,
           color: pendingChoice?.uci === option.uci ? CONFIRM_COLOR : OPTION_COLORS[index % OPTION_COLORS.length],
         }))
-      : [],
+      : phase === 'failed'
+        ? reviewOptions.map((option) => ({
+            startSquare: option.from,
+            endSquare: option.to,
+            color: QUALITY_COLORS[option.quality],
+          }))
+        : [],
   };
 
   return (
@@ -352,34 +360,12 @@ export default function App() {
           <span><strong>Fourced</strong> Move</span>
         </a>
         <div className="top-actions">
-          <button className="text-button" type="button" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}>
-            Tuning
-          </button>
           <button className="text-button" type="button" onClick={() => setOrientation((color) => color === 'w' ? 'b' : 'w')}>
             <span aria-hidden="true">↻</span> Flip board
           </button>
           <button className="primary-small" type="button" onClick={newGame}>New game</button>
         </div>
       </header>
-
-      {settingsOpen && (
-        <section className="settings-panel" aria-label="Classification tuning">
-          <div>
-            <strong>Classification thresholds</strong>
-            <p>Centipawns lost compared with the engine’s best move.</p>
-          </div>
-          <label>
-            Good, up to
-            <input type="number" min="0" max={thresholds.inaccurateMax - 1} value={thresholds.goodMax}
-              onChange={(event) => setThresholds((current) => ({ ...current, goodMax: Number(event.target.value) }))} />
-          </label>
-          <label>
-            Inaccurate, up to
-            <input type="number" min={thresholds.goodMax + 1} value={thresholds.inaccurateMax}
-              onChange={(event) => setThresholds((current) => ({ ...current, inaccurateMax: Number(event.target.value) }))} />
-          </label>
-        </section>
-      )}
 
       <section id="game" className="game-layout">
         <div className="board-column">
@@ -461,6 +447,31 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {phase === 'failed' && failure && (
+              <div className="move-review" aria-label="Move quality review">
+                <div className="review-options">
+                  {reviewOptions.map((option) => {
+                    const wasPlayed = option.uci === failure.option.uci;
+                    return (
+                      <div
+                        className={`review-option${wasPlayed ? ' played' : ''}`}
+                        key={option.id}
+                        style={{ '--quality-color': QUALITY_COLORS[option.quality] } as React.CSSProperties}
+                      >
+                        <span className="review-swatch" aria-hidden="true" />
+                        <span className="review-move">
+                          <strong>{option.san}</strong>
+                          <small>{option.description}</small>
+                        </span>
+                        <span className="review-quality">{option.quality}</span>
+                        {wasPlayed && <Check className="review-check" aria-label="Move played" strokeWidth={3} />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="history-section">
@@ -500,21 +511,33 @@ export default function App() {
           </section>
         </div>
       )}
-      {failure && !showHowToPlay && (
+      {failure && showFailureModal && !showHowToPlay && (
         <div
           className="modal-backdrop"
           role="presentation"
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) newGame();
+            if (event.target === event.currentTarget) setShowFailureModal(false);
           }}
         >
           <section className="score-modal" role="dialog" aria-modal="true" aria-labelledby="score-modal-title">
-            <button className="modal-close" type="button" onClick={newGame} aria-label="Close and start a new game">×</button>
+            <button className="modal-close" type="button" onClick={() => setShowFailureModal(false)} aria-label="Close and review the final position">×</button>
             <span className="modal-kicker">Game over</span>
             <h2 id="score-modal-title">{failure.option.quality} move</h2>
-            <span className="modal-score-label">Your score</span>
-            <strong className="modal-score">{failure.score}</strong>
-            <button className="primary-small" type="button" onClick={newGame}>Start a new game</button>
+            <div className="modal-results">
+              <div className="modal-result">
+                <span className="modal-score-label">Your score</span>
+                <strong className="modal-score">{failure.score}</strong>
+              </div>
+              <div className="modal-result">
+                <span className="modal-score-label">Best move rate</span>
+                <strong className="modal-score">{bestMovePercentage}%</strong>
+              </div>
+            </div>
+            <p className="modal-breakdown"><strong>{moveStats.best}</strong> Best <span>·</span> <strong>{moveStats.good}</strong> Good</p>
+            <div className="modal-actions">
+              <button className="modal-secondary" type="button" onClick={() => setShowFailureModal(false)}>Review position</button>
+              <button className="primary-small" type="button" onClick={newGame}>New game</button>
+            </div>
           </section>
         </div>
       )}

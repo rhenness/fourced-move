@@ -113,44 +113,6 @@ input:focus-visible,
   transform: translateY(-1px);
 }
 
-.settings-panel {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 22px;
-  padding: 14px 18px;
-  background: #e9e3d6;
-  border: 1px solid var(--line);
-  border-top: 0;
-}
-.settings-panel div {
-  margin-right: auto;
-}
-.settings-panel strong {
-  font:
-    600 15px Georgia,
-    serif;
-}
-.settings-panel p {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #6c746e;
-}
-.settings-panel label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.settings-panel input {
-  width: 72px;
-  padding: 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--paper);
-}
-
 .game-layout {
   display: grid;
   grid-template-columns: minmax(360px, 660px) minmax(350px, 1fr);
@@ -266,6 +228,16 @@ input:focus-visible,
   color: white;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
+.move-review { display: grid; gap: 12px; }
+.review-options { display: grid; gap: 7px; }
+.review-option { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 20px; gap: 10px; min-height: 49px; padding: 8px 10px; align-items: center; border: 1px solid color-mix(in srgb, var(--quality-color) 32%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--quality-color) 6%, rgba(255,255,255,.72)); }
+.review-option.played { border-width: 2px; background: color-mix(in srgb, var(--quality-color) 12%, #fffdf8); }
+.review-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--quality-color); }
+.review-move { display: grid; min-width: 0; }
+.review-move strong { color: var(--green); font: 700 16px Georgia, serif; }
+.review-move small { overflow: hidden; color: #7b827e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.review-quality { color: var(--quality-color); font-size: 11px; font-weight: 800; }
+.review-check { width: 18px; height: 18px; color: var(--quality-color); }
 
 .thinking,
 .engine-error,
@@ -493,11 +465,35 @@ footer {
     serif;
 }
 .modal-score {
-  margin: 2px 0 24px;
+  margin-top: 4px;
   color: white;
   font:
-    700 72px/1 Georgia,
+    700 52px/1 Georgia,
     serif;
+}
+.modal-results { display: grid; width: 100%; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-result { display: flex; min-width: 0; align-items: center; flex-direction: column; }
+.modal-breakdown { margin: 11px 0 24px; color: rgba(255,255,255,.7); font-size: 12px; }
+.modal-breakdown strong { color: white; }
+.modal-breakdown span { margin: 0 5px; color: rgba(255,255,255,.35); }
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+}
+.modal-secondary {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 5px;
+  color: white;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.modal-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
 }
 .how-to-modal h2 {
   margin-bottom: 18px;
@@ -534,13 +530,6 @@ footer {
     width: min(100%, 640px);
     margin: 0 auto;
   }
-  .settings-panel {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-  .settings-panel div {
-    flex-basis: 100%;
-  }
   .history-section {
     display: none;
   }
@@ -564,9 +553,6 @@ footer {
   }
   .top-actions {
     gap: 2px;
-  }
-  .top-actions .text-button:first-child {
-    display: none;
   }
   .text-button {
     padding: 9px 7px;
@@ -618,9 +604,6 @@ footer {
   }
   .rules-note,
   footer {
-    display: none;
-  }
-  .settings-panel {
     display: none;
   }
 }

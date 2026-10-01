@@ -39,6 +39,12 @@ export type StoredTurn = {
 export type StoredFailure = {
   option: MoveOption;
   score: number;
+  options?: MoveOption[];
+};
+
+export type MoveStats = {
+  best: number;
+  good: number;
 };
 
 export type PersistedGame = {
@@ -47,6 +53,7 @@ export type PersistedGame = {
   orientation: Color;
   turn: StoredTurn | null;
   failure?: StoredFailure | null;
+  stats?: MoveStats;
 };
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
