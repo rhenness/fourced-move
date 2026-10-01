@@ -36,6 +36,11 @@ export type StoredTurn = {
   options: MoveOption[];
 };
 
+export type StoredMoveReview = StoredTurn & {
+  ply: number;
+  playedUci: string;
+};
+
 export type StoredFailure = {
   option: MoveOption;
   score: number;
@@ -55,6 +60,7 @@ export type PersistedGame = {
   failure?: StoredFailure | null;
   stats?: MoveStats;
   streak?: number;
+  moveReviews?: StoredMoveReview[];
 };
 
 export const DEFAULT_THRESHOLDS: Thresholds = {

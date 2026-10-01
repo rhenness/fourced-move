@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chessboard, type ChessboardOptions } from "react-chessboard";
 import { Chess, type Color, type Move } from "chess.js";
-import { Check } from "lucide-react";
+import { Check, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "lucide-react";
 import { StockfishAnalyzer } from "./engine/stockfish";
+import GameReview, { QUALITY_COLORS } from "./GameReview";
+import { moveLabel, scoreLabel } from "./game/review";
 import {
   describeMove,
   gameStatus,
   moveToUci,
   playOfferedMove,
 } from "./game/chess";
-import { compareEvaluations, selectFour, shuffle } from "./game/classification";
+import { selectFour, shuffle } from "./game/classification";
 import {
   DEFAULT_THRESHOLDS,
   type MoveStats,
   type MoveOption,
   type PersistedGame,
   type StoredFailure,
+  type StoredMoveReview,
   type StoredTurn,
   type Thresholds,
 } from "./game/types";
@@ -27,12 +30,6 @@ const OPTION_COLORS = ["#c28b26", "#477c9e", "#a95843", "#785b96"];
 const CONFIRM_COLOR = "#2f8a5c";
 const STARTING_FEN = new Chess().fen();
 const OPENING_MOVE_UCIS = ["c2c4", "d2d4", "e2e4", "g1f3"] as const;
-const QUALITY_COLORS: Record<MoveOption["quality"], string> = {
-  Best: "#2f8a5c",
-  Good: "#477c9e",
-  Inaccurate: "#c28b26",
-  Bad: "#a95843",
-};
 const RANDOM_POSITIONS = [
   "2r2k1r/p2q1ppp/1pNnpb2/8/1P6/P3PQ2/5PPP/1RB2RK1 w - - 7 22",
   "3q1rk1/5p1p/6p1/1Q1p1n2/8/r3PB2/5PPP/2R2RK1 w - - 0 21",
@@ -99,6 +96,7 @@ function initialSession() {
       failure: null,
       stats: { best: 0, good: 0 },
       streak: 0,
+      moveReviews: [],
     };
   try {
     const chess = restoreChess(saved.pgn);
@@ -109,6 +107,7 @@ function initialSession() {
       failure: saved.failure ?? null,
       stats: saved.stats ?? { best: 0, good: 0 },
       streak: saved.streak ?? saved.failure?.score ?? chess.history().length,
+      moveReviews: saved.moveReviews ?? [],
     };
   } catch {
     return {
@@ -118,6 +117,7 @@ function initialSession() {
       failure: null,
       stats: { best: 0, good: 0 },
       streak: 0,
+      moveReviews: [],
     };
   }
 }
@@ -184,30 +184,6 @@ function buildOpeningOptions(legalMoves: Move[]): MoveOption[] {
   });
 }
 
-function historyRows(
-  moves: string[],
-): Array<{ number: number; white: string; black?: string }> {
-  const rows = [];
-  for (let i = 0; i < moves.length; i += 2) {
-    rows.push({
-      number: i / 2 + 1,
-      white: moves[i],
-      ...(moves[i + 1] ? { black: moves[i + 1] } : {}),
-    });
-  }
-  return rows;
-}
-
-function scoreLabel(option: MoveOption): string {
-  if (option.score.kind === "mate") {
-    return option.score.value > 0
-      ? `Mate in ${option.score.value}`
-      : `Mated in ${Math.abs(option.score.value)}`;
-  }
-  const pawns = option.score.value / 100;
-  return `${pawns >= 0 ? "+" : ""}${pawns.toFixed(2)}`;
-}
-
 export default function App() {
   const session = useMemo(initialSession, []);
   const chessRef = useRef(session.chess);
@@ -233,12 +209,56 @@ export default function App() {
   const [selected, setSelected] = useState<MoveOption | null>(null);
   const [pendingChoice, setPendingChoice] = useState<MoveOption | null>(null);
   const [error, setError] = useState("");
+  const [moveReviews, setMoveReviews] = useState<StoredMoveReview[]>(session.moveReviews);
+  const [reviewPly, setReviewPly] = useState<number | null>(null);
   const chess = chessRef.current;
   const fen = chess.fen();
   const terminal = gameStatus(chess);
-  const moves = chess.history();
-  const rows = historyRows(moves);
-  const lastMove = chess.history({ verbose: true }).at(-1);
+  const moves = useMemo(() => chessRef.current.history({ verbose: true }), [revision]);
+  const isReviewing = phase === "failed" || phase === "finished";
+  const currentPly = Math.min(reviewPly ?? moves.length, moves.length);
+  const reviewMove = currentPly > 0 ? moves[currentPly - 1] : undefined;
+  const storedReview = moveReviews.find((review) =>
+    review.ply === currentPly && review.fen === reviewMove?.before &&
+    review.playedUci === (reviewMove ? moveToUci(reviewMove) : ""),
+  );
+  const currentReview = storedReview ?? (
+    failure && reviewMove && currentPly === moves.length
+      ? { ply: currentPly, fen: reviewMove.before, playedUci: failure.option.uci,
+          options: failure.options?.length ? failure.options : [failure.option] }
+      : undefined
+  );
+  const lastMove = isReviewing ? reviewMove : moves.at(-1);
+  const displayedFen = isReviewing
+    ? reviewMove?.after ?? moves[0]?.before ?? fen
+    : fen;
+  const rows = new Map<number, { white?: { move: Move; ply: number }; black?: { move: Move; ply: number } }>();
+  moves.forEach((move, index) => {
+    const number = Number(move.before.split(" ")[5]);
+    const row = rows.get(number) ?? {};
+    row[move.color === "w" ? "white" : "black"] = { move, ply: index + 1 };
+    rows.set(number, row);
+  });
+
+  const saveReview = useCallback((review: StoredMoveReview) => {
+    setMoveReviews((current) => [...current.filter((entry) => entry.ply !== review.ply), review]);
+  }, []);
+
+  const navigateReview = useCallback((ply: number) => {
+    setReviewPly(Math.max(0, Math.min(ply, moves.length)));
+  }, [moves.length]);
+
+  useEffect(() => {
+    if (!isReviewing || showFailureModal || showHowToPlay || showNewGamePicker) return;
+    const stepOnArrow = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      navigateReview(currentPly + (event.key === "ArrowLeft" ? -1 : 1));
+    };
+    document.addEventListener("keydown", stepOnArrow);
+    return () => document.removeEventListener("keydown", stepOnArrow);
+  }, [isReviewing, currentPly, navigateReview, showFailureModal, showHowToPlay, showNewGamePicker]);
 
   const dismissHowToPlay = () => {
     try {
@@ -266,9 +286,10 @@ export default function App() {
       failure,
       stats: moveStats,
       streak,
+      moveReviews,
     };
     localStorage.setItem(GAME_KEY, JSON.stringify(game));
-  }, [failure, moveStats, orientation, revision, streak, turn]);
+  }, [failure, moveStats, moveReviews, orientation, revision, streak, turn]);
 
   useEffect(() => {
     if (!pendingChoice) return;
@@ -347,6 +368,7 @@ export default function App() {
     try {
       const score = streak;
       playOfferedMove(chessRef.current, option, turn.options, turn.fen);
+      saveReview({ ...turn, ply: chessRef.current.history().length, playedUci: option.uci });
       activeAnalysisRef.current?.abort();
       setSelected(option);
       setPendingChoice(null);
@@ -396,6 +418,8 @@ export default function App() {
   const startNewGame = (fen?: string) => {
     activeAnalysisRef.current?.abort();
     chessRef.current = createChess(fen);
+    setMoveReviews([]);
+    setReviewPly(null);
     setTurn(null);
     setSelected(null);
     setFailure(null);
@@ -412,6 +436,7 @@ export default function App() {
 
   const continueFromPosition = () => {
     activeAnalysisRef.current?.abort();
+    setReviewPly(null);
     setTurn(null);
     setSelected(null);
     setFailure(null);
@@ -465,14 +490,7 @@ export default function App() {
   };
 
   const previewMove =
-    pendingChoice ?? preview ?? (phase === "revealed" ? selected : null);
-  const reviewOptions = [
-    ...(failure?.options?.length
-      ? failure.options
-      : failure
-        ? [failure.option]
-        : []),
-  ].sort(compareEvaluations);
+    isReviewing ? null : pendingChoice ?? preview ?? (phase === "revealed" ? selected : null);
   const previewIndex =
     turn?.options.findIndex((option) => option.uci === previewMove?.uci) ?? -1;
   const previewColor =
@@ -495,7 +513,7 @@ export default function App() {
 
   const boardOptions: ChessboardOptions = {
     id: "fourced-move-board",
-    position: fen,
+    position: displayedFen,
     boardOrientation: orientation === "w" ? "white" : "black",
     allowDragging: false,
     allowDrawingArrows: false,
@@ -518,8 +536,8 @@ export default function App() {
                 ? CONFIRM_COLOR
                 : OPTION_COLORS[index % OPTION_COLORS.length],
           }))
-        : phase === "failed"
-          ? reviewOptions.map((option) => ({
+        : isReviewing && reviewMove && currentReview
+          ? currentReview.options.map((option) => ({
               startSquare: option.from,
               endSquare: option.to,
               color: QUALITY_COLORS[option.quality],
@@ -584,6 +602,16 @@ export default function App() {
               <strong>{failure?.score ?? streak}</strong>
             </span>
           </div>
+          {isReviewing && (
+            <div className="history-navigation" aria-label="Game review navigation">
+              <div className="history-controls">
+                <button type="button" aria-label="Go to starting position" disabled={currentPly === 0} onClick={() => navigateReview(0)}><ChevronFirst size={20} aria-hidden="true" /></button>
+                <button type="button" aria-label="Previous move" disabled={currentPly === 0} onClick={() => navigateReview(currentPly - 1)}><ChevronLeft size={20} aria-hidden="true" /></button>
+                <button type="button" aria-label="Next move" disabled={currentPly === moves.length} onClick={() => navigateReview(currentPly + 1)}><ChevronRight size={20} aria-hidden="true" /></button>
+                <button type="button" aria-label="Go to final position" disabled={currentPly === moves.length} onClick={() => navigateReview(moves.length)}><ChevronLast size={20} aria-hidden="true" /></button>
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className="play-panel">
@@ -617,7 +645,7 @@ export default function App() {
             )}
 
             {phase === "finished" && (
-              <div className="finished-card">
+              <div className="finished-card review-finished-card">
                 <span aria-hidden="true">♟</span>
                 <p>{terminal}</p>
                 <button
@@ -683,50 +711,28 @@ export default function App() {
               </div>
             )}
 
-            {phase === "failed" && failure && (
-              <div className="move-review" aria-label="Move quality review">
-                <div className="review-options">
-                  {reviewOptions.map((option) => {
-                    const wasPlayed = option.uci === failure.option.uci;
-                    return (
-                      <div
-                        className={`review-option${wasPlayed ? " played" : ""}`}
-                        key={option.id}
-                        style={
-                          {
-                            "--quality-color": QUALITY_COLORS[option.quality],
-                          } as React.CSSProperties
-                        }
-                      >
-                        <span className="review-swatch" aria-hidden="true" />
-                        <span className="review-move">
-                          <strong>{option.san}</strong>
-                          <small>{option.description}</small>
-                        </span>
-                        <span className="review-quality">{option.quality}</span>
-                        {wasPlayed && (
-                          <Check
-                            className="review-check"
-                            aria-label="Move played"
-                            strokeWidth={3}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <button
+            {isReviewing && (
+              <div className="move-review">
+                <GameReview
+                  move={reviewMove}
+                  ply={currentPly}
+                  review={currentReview}
+                  onAnalyzed={saveReview}
+                />
+                {phase === "failed" && <button
                   className="primary-small review-continue"
                   type="button"
                   onClick={continueFromPosition}
                 >
-                  Continue from position
-                </button>
+                  {currentPly === moves.length
+                    ? "Continue from position"
+                    : "Continue from final position"}
+                </button>}
               </div>
             )}
           </div>
 
-          <div className="history-section">
+          <div className={`history-section${isReviewing ? " reviewing" : ""}`}>
             <div className="section-title">
               <span>Move history</span>
               <small>
@@ -738,14 +744,25 @@ export default function App() {
               tabIndex={0}
               aria-label="Move history"
             >
-              {rows.length === 0 ? (
+              {rows.size === 0 ? (
                 <p className="empty-history">Your game starts here.</p>
               ) : (
-                rows.map((row) => (
-                  <div className="history-row" key={row.number}>
-                    <span>{row.number}.</span>
-                    <strong>{row.white}</strong>
-                    <strong>{row.black ?? ""}</strong>
+                [...rows].map(([number, row]) => (
+                  <div className="history-row" key={number}>
+                    <span>{number}.</span>
+                    {[row.white, row.black].map((entry, index) =>
+                      entry ? isReviewing ? (
+                        <button
+                          type="button"
+                          key={index}
+                          className={`history-move${currentPly === entry.ply ? " current" : ""}`}
+                          aria-current={currentPly === entry.ply ? "step" : undefined}
+                          aria-label={`Review ${moveLabel(entry.move)}`}
+                          onClick={() => navigateReview(entry.ply)}
+                        >{entry.move.san}</button>
+                      ) : <strong key={index}>{entry.move.san}</strong>
+                      : <span key={index} />,
+                    )}
                   </div>
                 ))
               )}

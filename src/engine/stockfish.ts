@@ -67,14 +67,14 @@ export class StockfishAnalyzer {
     signal?.addEventListener('abort', abort, { once: true });
     try {
       const initialCount = Math.min(legalMoves.length, 16);
-      const first = await this.search(fen, initialCount, 1_900);
+      const first = await this.search(fen, initialCount, 1_900, legalMoves);
       const qualitiesAvailable = this.hasUsefulSpread(first.evaluations);
       if ((qualitiesAvailable && first.stable) || legalMoves.length <= initialCount) {
         return first.evaluations;
       }
 
       const broadCount = Math.min(legalMoves.length, 64);
-      const second = await this.search(fen, broadCount, 2_800);
+      const second = await this.search(fen, broadCount, 2_800, legalMoves);
       return second.evaluations.length ? second.evaluations : first.evaluations;
     } finally {
       signal?.removeEventListener('abort', abort);
@@ -103,7 +103,7 @@ export class StockfishAnalyzer {
     return Math.max(...values) - Math.min(...values) > 150;
   }
 
-  private search(fen: string, multiPv: number, movetime: number): Promise<SearchResult> {
+  private search(fen: string, multiPv: number, movetime: number, legalMoves: string[]): Promise<SearchResult> {
     if (!this.worker) return Promise.reject(new Error('Stockfish is not available.'));
     const token = ++this.token;
     this.worker.postMessage('stop');
@@ -111,7 +111,7 @@ export class StockfishAnalyzer {
       this.pending = { expected: multiPv, byDepth: new Map(), resolve, reject, token };
       this.worker?.postMessage(`setoption name MultiPV value ${multiPv}`);
       this.worker?.postMessage(`position fen ${fen}`);
-      this.worker?.postMessage(`go movetime ${movetime}`);
+      this.worker?.postMessage(`go movetime ${movetime} searchmoves ${legalMoves.join(' ')}`);
     });
   }
 

@@ -4,6 +4,8 @@ A local two-player chess game where every turn offers up to four engine-evaluate
 
 The game runs entirely in the browser with React, TypeScript, `chess.js`, `react-chessboard`, and the lightweight single-threaded Stockfish WebAssembly build. Game state and settings are stored in `localStorage`.
 
+After a game ends, review it using the previous/next controls, Left/Right arrow keys, or clickable moves in the history. Each selected move shows the saved choices, their quality, and their engine value from the moving player's perspective. All choices appear as arrows matching their quality colors while the board shows the played position. Older saved games are analyzed on demand when historical values are missing.
+
 ## Run locally
 
 ```bash

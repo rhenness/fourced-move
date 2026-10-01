@@ -239,6 +239,22 @@ input:focus-visible,
 .review-move small { overflow: hidden; color: #7b827e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .review-quality { color: var(--quality-color); font-size: 11px; font-weight: 800; }
 .review-check { width: 18px; height: 18px; color: var(--quality-color); }
+.review-option { width: 100%; color: inherit; font: inherit; text-align: left; }
+.review-note { color: #747a76; font-size: 11px; line-height: 1.5; }
+.review-note { margin: 0; }
+.review-value { display: grid; gap: 3px; justify-items: end; }
+.review-value strong { font-size: 12px; }
+.review-finished-card { min-height: 130px; margin-bottom: 16px; padding: 14px; }
+.review-finished-card > span { font-size: 24px; }
+.review-finished-card p { margin: 8px 0 12px; font-size: 18px; }
+.history-navigation { display: grid; justify-items: center; gap: 6px; margin-top: 15px; }
+.history-controls { display: flex; width: 100%; align-items: center; justify-content: center; gap: 6px; }
+.history-controls > button { display: grid; place-items: center; flex-shrink: 0; width: 38px; min-height: 40px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); cursor: pointer; }
+.history-controls > button:hover:not(:disabled) { background: rgba(35,75,64,.08); }
+.history-controls > button:disabled { opacity: .35; cursor: default; }
+.history-move { border: 0; border-radius: 3px; padding: 4px 6px; color: var(--green); background: transparent; font-size: 13px; font-weight: 700; text-align: left; cursor: pointer; }
+.history-move:hover { background: rgba(35,75,64,.1); }
+.history-move.current { color: white; background: var(--green); }
 
 .thinking,
 .engine-error,
@@ -537,6 +553,9 @@ footer {
   }
   .history-section {
     display: none;
+  }
+  .history-section.reviewing {
+    display: block;
   }
 }
 
