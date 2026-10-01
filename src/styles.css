@@ -512,6 +512,13 @@ footer {
   color: #f0cc69;
   font-weight: 700;
 }
+.new-game-modal { width: min(410px, 100%); }
+.new-game-modal h2 { margin-bottom: 20px; }
+.new-game-choices { display: grid; width: 100%; grid-template-columns: 1fr 1fr; gap: 10px; }
+.new-game-choices button { display: flex; min-height: 104px; padding: 17px 13px; align-items: center; justify-content: center; flex-direction: column; gap: 5px; border: 1px solid rgba(255,255,255,.24); border-radius: 7px; color: white; background: rgba(255,255,255,.05); text-align: center; cursor: pointer; }
+.new-game-choices button:hover, .new-game-choices button:focus-visible { border-color: #f0cc69; background: rgba(255,255,255,.1); }
+.new-game-choices strong { font: 700 18px Georgia, serif; }
+.new-game-choices span { color: rgba(255,255,255,.62); font-size: 11px; line-height: 1.35; }
 
 @media (max-width: 900px) {
   .app-shell {
