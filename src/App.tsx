@@ -417,10 +417,6 @@ export default function App() {
     : failure
       ? [failure.option]
       : [];
-  const ratedMoveCount = moveStats.best + moveStats.good;
-  const bestMovePercentage = ratedMoveCount
-    ? Math.round((moveStats.best / ratedMoveCount) * 100)
-    : 0;
   const previewIndex =
     turn?.options.findIndex((option) => option.uci === previewMove?.uci) ?? -1;
   const previewColor =
@@ -769,19 +765,10 @@ export default function App() {
             </button>
             <span className="modal-kicker">Game over</span>
             <h2 id="score-modal-title">{failure.option.quality} move</h2>
-            <div className="modal-results">
-              <div className="modal-result">
-                <span className="modal-score-label">Your score</span>
-                <strong className="modal-score">{failure.score}</strong>
-              </div>
-              <div className="modal-result">
-                <span className="modal-score-label">Best move rate</span>
-                <strong className="modal-score">{bestMovePercentage}%</strong>
-              </div>
-            </div>
+            <span className="modal-score-label">Your score</span>
+            <strong className="modal-score">{failure.score}</strong>
             <p className="modal-breakdown">
-              <strong>{moveStats.best}</strong> Best <span>·</span>{" "}
-              <strong>{moveStats.good}</strong> Good
+              {moveStats.best} Best <span>·</span> {moveStats.good} Good
             </p>
             <div className="modal-actions">
               <button

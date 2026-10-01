@@ -471,10 +471,7 @@ footer {
     700 52px/1 Georgia,
     serif;
 }
-.modal-results { display: grid; width: 100%; grid-template-columns: 1fr 1fr; gap: 12px; }
-.modal-result { display: flex; min-width: 0; align-items: center; flex-direction: column; }
 .modal-breakdown { margin: 11px 0 24px; color: rgba(255,255,255,.7); font-size: 12px; }
-.modal-breakdown strong { color: white; }
 .modal-breakdown span { margin: 0 5px; color: rgba(255,255,255,.35); }
 .modal-actions {
   display: flex;
