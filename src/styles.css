@@ -229,6 +229,7 @@ input:focus-visible,
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
 .move-review { display: grid; gap: 12px; }
+.review-continue { width: 100%; justify-self: stretch; text-align: center; }
 .review-options { display: grid; gap: 7px; }
 .review-option { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 20px; gap: 10px; min-height: 49px; padding: 8px 10px; align-items: center; border: 1px solid color-mix(in srgb, var(--quality-color) 32%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--quality-color) 6%, rgba(255,255,255,.72)); }
 .review-option.played { border-width: 2px; background: color-mix(in srgb, var(--quality-color) 12%, #fffdf8); }

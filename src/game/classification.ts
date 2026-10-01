@@ -10,7 +10,10 @@ export function scoreUtility(score: EngineScore): number {
     : -MATE_VALUE - score.value;
 }
 
-export function compareEvaluations(a: EvaluatedMove, b: EvaluatedMove): number {
+export function compareEvaluations(
+  a: Pick<EvaluatedMove, 'score'>,
+  b: Pick<EvaluatedMove, 'score'>,
+): number {
   return scoreUtility(b.score) - scoreUtility(a.score);
 }
 

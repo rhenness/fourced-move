@@ -54,6 +54,7 @@ export type PersistedGame = {
   turn: StoredTurn | null;
   failure?: StoredFailure | null;
   stats?: MoveStats;
+  streak?: number;
 };
 
 export const DEFAULT_THRESHOLDS: Thresholds = {

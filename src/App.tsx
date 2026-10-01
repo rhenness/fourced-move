@@ -9,7 +9,7 @@ import {
   moveToUci,
   playOfferedMove,
 } from "./game/chess";
-import { selectFour, shuffle } from "./game/classification";
+import { compareEvaluations, selectFour, shuffle } from "./game/classification";
 import {
   DEFAULT_THRESHOLDS,
   type MoveStats,
@@ -25,6 +25,8 @@ const GAME_KEY = "fourced-move.game.v1";
 const VISITED_KEY = "fourced-move.visited.v1";
 const OPTION_COLORS = ["#c28b26", "#477c9e", "#a95843", "#785b96"];
 const CONFIRM_COLOR = "#2f8a5c";
+const STARTING_FEN = new Chess().fen();
+const OPENING_MOVE_UCIS = ["c2c4", "d2d4", "e2e4", "g1f3"] as const;
 const QUALITY_COLORS: Record<MoveOption["quality"], string> = {
   Best: "#2f8a5c",
   Good: "#477c9e",
@@ -96,14 +98,17 @@ function initialSession() {
       turn: null,
       failure: null,
       stats: { best: 0, good: 0 },
+      streak: 0,
     };
   try {
+    const chess = restoreChess(saved.pgn);
     return {
-      chess: restoreChess(saved.pgn),
+      chess,
       orientation: saved.orientation === "b" ? ("b" as Color) : ("w" as Color),
       turn: saved.turn,
       failure: saved.failure ?? null,
       stats: saved.stats ?? { best: 0, good: 0 },
+      streak: saved.streak ?? saved.failure?.score ?? chess.history().length,
     };
   } catch {
     return {
@@ -112,6 +117,7 @@ function initialSession() {
       turn: null,
       failure: null,
       stats: { best: 0, good: 0 },
+      streak: 0,
     };
   }
 }
@@ -155,6 +161,29 @@ function buildOptions(
   );
 }
 
+function buildOpeningOptions(legalMoves: Move[]): MoveOption[] {
+  const byUci = new Map(legalMoves.map((move) => [moveToUci(move), move]));
+  return OPENING_MOVE_UCIS.flatMap((uci) => {
+    const move = byUci.get(uci);
+    if (!move) return [];
+    return [
+      {
+        id: uci,
+        uci,
+        san: move.san,
+        from: move.from,
+        to: move.to,
+        ...(move.promotion ? { promotion: move.promotion } : {}),
+        piece: move.piece,
+        ...(move.captured ? { captured: move.captured } : {}),
+        description: describeMove(move),
+        quality: "Good",
+        score: { kind: "cp", value: 0 },
+      },
+    ];
+  });
+}
+
 function historyRows(
   moves: string[],
 ): Array<{ number: number; white: string; black?: string }> {
@@ -196,6 +225,7 @@ export default function App() {
   );
   const [showNewGamePicker, setShowNewGamePicker] = useState(false);
   const [moveStats, setMoveStats] = useState<MoveStats>(session.stats);
+  const [streak, setStreak] = useState(session.streak);
   const [showHowToPlay, setShowHowToPlay] = useState(
     () => !isReturningVisitor(),
   );
@@ -235,9 +265,10 @@ export default function App() {
       turn,
       failure,
       stats: moveStats,
+      streak,
     };
     localStorage.setItem(GAME_KEY, JSON.stringify(game));
-  }, [failure, moveStats, orientation, revision, turn]);
+  }, [failure, moveStats, orientation, revision, streak, turn]);
 
   useEffect(() => {
     if (!pendingChoice) return;
@@ -264,6 +295,12 @@ export default function App() {
     }
 
     const legalMoves = chessRef.current.moves({ verbose: true });
+    if (fen === STARTING_FEN) {
+      setTurn({ fen, options: buildOpeningOptions(legalMoves) });
+      setPhase("ready");
+      return;
+    }
+
     if (isStoredTurnValid(turn, fen, legalMoves)) {
       setPhase("ready");
       return;
@@ -308,7 +345,7 @@ export default function App() {
   const playMove = (option: MoveOption) => {
     if (phase !== "ready" || !turn) return;
     try {
-      const score = chessRef.current.history().length;
+      const score = streak;
       playOfferedMove(chessRef.current, option, turn.options, turn.fen);
       activeAnalysisRef.current?.abort();
       setSelected(option);
@@ -329,6 +366,7 @@ export default function App() {
           ? { ...current, best: current.best + 1 }
           : { ...current, good: current.good + 1 },
       );
+      setStreak((current) => current + 1);
 
       setPhase("revealed");
       window.setTimeout(() => {
@@ -363,10 +401,26 @@ export default function App() {
     setFailure(null);
     setShowFailureModal(false);
     setMoveStats({ best: 0, good: 0 });
+    setStreak(0);
     setPendingChoice(null);
     setPreview(null);
     setError("");
     setShowNewGamePicker(false);
+    setPhase("loading");
+    setRevision((value) => value + 1);
+  };
+
+  const continueFromPosition = () => {
+    activeAnalysisRef.current?.abort();
+    setTurn(null);
+    setSelected(null);
+    setFailure(null);
+    setShowFailureModal(false);
+    setMoveStats({ best: 0, good: 0 });
+    setStreak(0);
+    setPendingChoice(null);
+    setPreview(null);
+    setError("");
     setPhase("loading");
     setRevision((value) => value + 1);
   };
@@ -412,11 +466,13 @@ export default function App() {
 
   const previewMove =
     pendingChoice ?? preview ?? (phase === "revealed" ? selected : null);
-  const reviewOptions = failure?.options?.length
-    ? failure.options
-    : failure
-      ? [failure.option]
-      : [];
+  const reviewOptions = [
+    ...(failure?.options?.length
+      ? failure.options
+      : failure
+        ? [failure.option]
+        : []),
+  ].sort(compareEvaluations);
   const previewIndex =
     turn?.options.findIndex((option) => option.uci === previewMove?.uci) ?? -1;
   const previewColor =
@@ -522,10 +578,10 @@ export default function App() {
               className="move-count"
               role="status"
               aria-live="polite"
-              aria-label={`Score: ${failure?.score ?? moves.length} ${(failure?.score ?? moves.length) === 1 ? "move" : "moves"} made`}
+              aria-label={`Score: ${failure?.score ?? streak} ${(failure?.score ?? streak) === 1 ? "move" : "moves"} made`}
             >
               <span>Score</span>
-              <strong>{failure?.score ?? moves.length}</strong>
+              <strong>{failure?.score ?? streak}</strong>
             </span>
           </div>
         </div>
@@ -659,6 +715,13 @@ export default function App() {
                     );
                   })}
                 </div>
+                <button
+                  className="primary-small review-continue"
+                  type="button"
+                  onClick={continueFromPosition}
+                >
+                  Continue from position
+                </button>
               </div>
             )}
           </div>
